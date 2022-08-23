@@ -3,7 +3,6 @@
   "title": "Compendium Browser",
   "description": "<p>Easily browse and filter spells, feats, items, and npcs loaded from compendia!</p>",
   "version": "0.7.3",
-  "author": "Spetzel#0103",
     "authors": [
       {
         "name": "Spetzel#0103",
@@ -15,6 +14,10 @@
       },
       {
         "name": "Felix#6196"
+      },
+      {
+        "name": "JoeV",
+        "url": "https://github.com/joevaughan"
       }
     ],
   "compatibility": {
