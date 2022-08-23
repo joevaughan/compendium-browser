@@ -3,7 +3,9 @@ Tired of scrolling compendia? Easily browse and filter for spells, feats, items,
 
 Compendium Browser is faster and better-behaved; **it no longer loads all the compendia into memory on start-up** (which sometimes hung servers because of memory or CPU requirements). Instead, it filters and loads on-demand, as well as giving you a Module Setting to control how many rows are loaded at a time.
 
-[Patch Notes](https://raw.githubusercontent.com/League-of-Foundry-Developers/compendium-browser/master/Patchnotes.md)
+[Patch Notes](https://raw.githubusercontent.com/joevaughan/compendium-browser/master/Patchnotes.md)
+## v0.8:
+- Supports Foundry 10
 ## v0.7:
 - Supports Foundry 0.8.x and Foundry 9
 - Faster searches using Foundry 0.8.x queries (thanks ZoltantheDM!)

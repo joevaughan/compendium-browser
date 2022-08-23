@@ -1,68 +1,72 @@
 {
-  "id": "compendium-browser",
-  "title": "Compendium Browser",
-  "description": "<p>Easily browse and filter spells, feats, items, and npcs loaded from compendia!</p>",
-  "author": "JoeV",
-  "version": "0.7.3",
+    "id": "compendium-browser2",
+    "title": "Compendium Browser2",
+    "description": "Easily browse and filter spells, feats, items, and npcs loaded from compendia!",
+    "version": "0.8",
     "authors": [
-      {
-        "name": "Spetzel#0103",
-        "url": "https://github.com/spetzel2020"
-      },
-      {
-        "name": "ZoltanDM",
-        "url": "https://github.com/ZoltanTheDM"
-      },
-      {
-        "name": "Felix#6196"
-      },
-      {
-        "name": "JoeV",
-        "url": "https://github.com/joevaughan"
-      }
+        {
+            "name": "DrVeoj#4863"
+        }
     ],
-  "compatibility": {
-      "minimum": "10",
-      "verified": "10"
-  },
-  "systems": ["dnd5e"],
-  "scripts": ["./compendium-browser.js"],
-  "styles": ["./compendium-browser.css"],
-  "packs": [],
-  "languages": [
-      {
-        "lang": "en",
-        "name": "English",
-        "path": "lang/en.json"
-      },
-      {
-        "lang": "ja",
-        "name": "Japanese",
-        "path": "lang/ja.json"
-      },
-      {
-        "lang": "fr",
-        "name": "French (FRANCE)",
-        "path": "lang/fr.json"
-      },
-      {
-        "lang": "pt-BR",
-        "name": "Português (Brasil)",
-        "path": "lang/pt-BR.json"
+    "compatibility": {
+        "minimum": "10",
+        "verified": "10"
     },
-    {
-      "lang": "es",
-      "name": "Español",
-      "path": "lang/es.json"
+    "system": ["dnd5e"],
+    "scripts": [
+        "./compendium-browser.js"
+    ],
+    "styles": [
+        "./compendium-browser.css"
+    ],
+    "packs": [],
+    "languages": [
+        {
+          "lang": "en",
+          "name": "English",
+          "path": "lang/en.json"
+        },
+        {
+          "lang": "ja",
+          "name": "Japanese",
+          "path": "lang/ja.json"
+        },
+        {
+          "lang": "fr",
+          "name": "French (FRANCE)",
+          "path": "lang/fr.json"
+        },
+        {
+          "lang": "pt-BR",
+          "name": "Português (Brasil)",
+          "path": "lang/pt-BR.json"
+      },
+      {
+        "lang": "es",
+        "name": "Español",
+        "path": "lang/es.json"
+      },
+      {
+        "lang": "de",
+        "name": "Deutsch",
+        "path": "lang/de.json"
+        }
+    ],
+    "relationships": {
+        "systems": [
+            {
+                "id": "dnd5e",
+                "type": "system",
+                "manifest": "https://raw.githubusercontent.com/foundryvtt/dnd5e/v10-dev/system.json",
+                "compatibility": {
+                    "minimum": "2.0.0-alpha1",
+                    "verified": "2.0.0"
+                }
+            }
+        ]
     },
-    {
-      "lang": "de",
-      "name": "Deutsch",
-      "path": "lang/de.json"
-      }
-  ],
-  "url": "https://github.com/joevaughan/compendium-browser",
-  "manifest": "https://github.com/joevaughan/compendium-browser/releases/latest/download/module.json",
-  "download": "https://github.com/joevaughan/compendium-browser/releases/download/v0.7.3/compendium-browser.zip"
+    "url": "https://github.com/joevaughan/compendium-browser",
+    "manifest": "https://github.com/joevaughan/compendium-browser/releases/latest/download/module.json",
+    "download": "https://github.com/joevaughan/compendium-browser/releases/download/v0.8.0/compendium-browser.zip"
 }
 
