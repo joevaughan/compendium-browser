@@ -53,16 +53,22 @@
             0.7.2c  Fix rarity encoding (uses camelcase names) (Issue #28)
                     Check for data.details?.cr in case you have NPCs without details (type=character)
                     Change message to "Loading..." until we're done, then "Loaded"
-5-Jan-2022  0.7.2d  decorateNpc(): NPCs without all details or weirdly formed ones should default damageDealt to [] not 0                    
+5-Jan-2022  0.7.2d  decorateNpc(): NPCs without all details or weirdly formed ones should default damageDealt to [] not 0 
+13-Sep-2022 0.8.0   Compatibility with Foundry V10
+                    Added check for Compendium Folders 'phantom' actors (#[tempEntity]) to filter out of NPC list
+                    Fix to handle un-migrated compendiums (they get auto-excluded from the browser even if selected)
 */
 
 const CMPBrowser = {
     MODULE_NAME : "compendium-browser",
-    MODULE_VERSION : "0.7.2",
+    MODULE_VERSION : "0.8.0",
     MAXLOAD : 500,      //Default for the maximum number to load before displaying a message that you need to filter to see more
 }
 
 const STOP_SEARCH = 'StopSearchException';
+
+// JV-080 - Adding a 'not-migrated' exception for v10 if the compendiums are not migrated to the new format (breaks e.g. npc compendium browser)
+const NOT_MIGRATED = 'NotMigratedException';
 
 class CompendiumBrowser extends Application {
 
@@ -101,6 +107,13 @@ class CompendiumBrowser extends Application {
             "modules/compendium-browser/template/loading.html"
         ]);
 
+        // We need to know this because in v10(+) Item5e#data and Actor#data have changed to Item5e#system and Actor#system
+        this.isVersion10 = false;
+
+        if (game.release.generation >= 10 ) {
+            this.isVersion10 = true;
+        }
+        
         this.hookCompendiumList();
         
         //Reset the filters used in the dialog
@@ -529,8 +542,8 @@ class CompendiumBrowser extends Application {
                                         name : decoratedItem.name,
                                         img: decoratedItem.img,
                                         data : {
-                                            level : decoratedItem.data?.level,
-                                            components : decoratedItem.data?.components
+                                            level : decoratedItem.level,
+                                            components : decoratedItem.components
                                         },
                                         id: item5e.id
                                     };
@@ -639,29 +652,45 @@ class CompendiumBrowser extends Application {
         let numNpcsLoaded = 0;
         this.npcsLoaded = false;
 
+
         // fields required for displaying and decorating NPCs
-        const requiredIndexFields = [
+        let requiredIndexFields = [
           'name',
           'img',
           'data.details.cr',
           'data.traits.size',
           'data.details.type',
           'items.type',
-          'items.data.damage.parts',
-        ]
+          'items.system.damage.parts',
+        ];
 
+        if (this.isVersion10)
+        {
+            requiredIndexFields = [
+                'name',
+                'img',
+                'system.details.cr',
+                'system.traits.size',
+                'system.details.type',
+                'items.type',
+                'items.system.damage.parts',
+              ]
+      
+        }
         // add any fields required for currently active filters
         const indexFields = requiredIndexFields.concat(
                               Object.values(this.npcFilters.activeFilters).map(f => f.path)
                             );
-
+        let collectionName = "unknown";
         try{
             for (let pack of game.packs) {
                 if (pack.documentName == "Actor" && this.settings.loadedNpcCompendium[pack.collection].load) {
                     await pack.getIndex({fields: indexFields}).then(async content => {
-
                         content.reduce(function(actorsList, npc5e){
                             if (this.CurrentSeachNumber != seachNumber) {throw STOP_SEARCH;}
+
+                            // JV-080: We're in a v10 foundry but the data doesn't have Actor#system - this means index fields won't have populated. Can't 'browse' like this. 
+                            if (this.isVersion10 && npc5e.system == undefined) {collectionName = pack.collection; throw NOT_MIGRATED;}
 
                             numNpcsLoaded = Object.keys(npcs).length;
 
@@ -669,23 +698,24 @@ class CompendiumBrowser extends Application {
                                 if (updateLoading) {updateLoading(numNpcsLoaded, true);}
                                 throw STOP_SEARCH;
                             }
+                            // JV-080: Special case. Compendium Folders creates Actors called #[CF_tempEntity] as placeholders for it's functions. Avoid them
+                            if (npc5e.name != "#[CF_tempEntity]") {
+                                const decoratedNpc = this.decorateNpc(npc5e);
 
-                            const decoratedNpc = this.decorateNpc(npc5e);
+                                if (decoratedNpc && this.passesFilter(decoratedNpc, this.npcFilters.activeFilters)){
 
-                            if (decoratedNpc && this.passesFilter(decoratedNpc, this.npcFilters.activeFilters)){
-
-                                actorsList[npc5e._id] = {
-                                    compendium : pack.collection,
-                                    name : decoratedNpc.name,
-                                    img: decoratedNpc.img,
-                                    displayCR : decoratedNpc.displayCR,
-                                    displaySize : decoratedNpc.displaySize,
-                                    displayType: this.getNPCType(decoratedNpc.data?.details?.type),
-                                    orderCR : decoratedNpc.data?.details?.cr,
-                                    orderSize : decoratedNpc.filterSize
-                                };
+                                    actorsList[npc5e._id] = {
+                                        compendium : pack.collection,
+                                        name : decoratedNpc.name,
+                                        img: decoratedNpc.img,
+                                        displayCR : decoratedNpc.displayCR,
+                                        displaySize : decoratedNpc.displaySize,
+                                        displayType: decoratedNpc.displayType,
+                                        orderCR : decoratedNpc.orderCR,
+                                        orderSize : decoratedNpc.filterSize
+                                    };
+                                }
                             }
-
                             return actorsList;
                         }.bind(this), npcs);
 
@@ -700,6 +730,9 @@ class CompendiumBrowser extends Application {
         catch(e){
             if (e == STOP_SEARCH){
                 //breaking out
+            }
+            else if (e == NOT_MIGRATED){
+                console.log("Cannot browse compendium %s as it is not migrated to v10 format",collectionName);
             }
             else{
                 console.timeEnd("loadAndFilterNpcs");
@@ -752,6 +785,8 @@ class CompendiumBrowser extends Application {
             });
         }
     }
+
+
 
     
     /* Hook to load the first data */
@@ -980,12 +1015,23 @@ class CompendiumBrowser extends Application {
     decorateItem(item5e) {
         if (!item5e) return null;
         //Decorate and then filter a compendium entry - returns null or the item
-        const item = item5e.data;
 
+        //JV-080 - v10 does away with item.data and everything is under #system but we want to decorate the first level of the item for return
+        let item = item5e;
+
+        if (this.isVersion10) {
+            item.level = item5e.system?.level;
+            item.components = item5e.system?.components;
+        }
+        else {
+            item = item5e.data;
+            item.level = item5e.data?.level;
+            item.components = item5e.data?.level;
+        }
         // getting damage types (common to all Items, although some won't have any)
         item.damageTypes = [];
-        if (item.data.damage && item.data.damage.parts.length > 0) {
-            for (let part of item.data.damage.parts) {
+        if (item.system.damage && item.system.damage.parts.length > 0) {
+            for (let part of item.system.damage.parts) {
                 let type = part[1];
                 if (item.damageTypes.indexOf(type) === -1) {
                     item.damageTypes.push(type);
@@ -999,13 +1045,13 @@ class CompendiumBrowser extends Application {
             //let cleanSpellName = spell.name.toLowerCase().replace(/[^a-zA-Z0-9\s:]/g, '').replace("'", '').replace(/ /g, '');
             if (this.classList[cleanSpellName]) {
                 let classes = this.classList[cleanSpellName];
-                item.data.classes = classes.split(',');
+                item.system.classes = classes.split(',');
             } else {
-//FIXME: unfoundSpells += cleanSpellName + ',';
+                //FIXME: unfoundSpells += cleanSpellName + ',';
             }
         } else  if (item.type === 'feat' || item.type === 'class') {
             // getting class
-            let reqString = item.data.requirements?.replace(/[0-9]/g, '').trim();
+            let reqString = item.system.requirements?.replace(/[0-9]/g, '').trim();
             let matchedClass = [];
             for (let c in this.subClasses) {
                 if (reqString && reqString.toLowerCase().indexOf(c) !== -1) {
@@ -1024,8 +1070,10 @@ class CompendiumBrowser extends Application {
 
             // getting uses/ressources status
             item.usesRessources = item5e.hasLimitedUses;
-            item.hasSave = item5e.hasSave;
-
+            //JV-080: In v10 this is only a getter (and will already exist since item = item5e.system)
+            if (!this.isVersion10) {
+                item.hasSave = item5e.hasSave;
+            }
         } else {
             // getting pack
             let matchedPacks = [];
@@ -1047,40 +1095,67 @@ class CompendiumBrowser extends Application {
     }
 
     decorateNpc(npc) {
-        //console.log('%c '+npc.name, 'background: white; color: red')
-        const decoratedNpc = npc;
+        try {
+            const decoratedNpc = npc;
+            
+            //0.8.0: update for V10 to use actor.system instead of actor.data
+            let npcData = decoratedNpc.data; 
 
-        // cr display
-        let cr = decoratedNpc.data.details?.cr; //0.7.2c: Possibly because of getIndex() use we now have to check for existence of details (doesn't for Character-type NPCs)
-        if (cr === undefined || cr === '') cr = 0;
-        else cr = Number(cr);
-        if (cr > 0 && cr < 1) cr = "1/" + (1 / cr);
-        decoratedNpc.displayCR = cr;
-        decoratedNpc.displaySize = 'unset';
-        decoratedNpc.filterSize = 2;
-        if (CONFIG.DND5E.actorSizes[decoratedNpc.data.traits.size] !== undefined) {
-            decoratedNpc.displaySize = CONFIG.DND5E.actorSizes[decoratedNpc.data.traits.size];
+            if (this.isVersion10)
+            {
+                    npcData = decoratedNpc.system;
+            }
+
+            // cr display
+            let cr = npcData.details?.cr; //0.7.2c: Possibly because of getIndex() use we now have to check for existence of details (doesn't for Character-type NPCs)
+            if (cr === undefined || cr === '') cr = 0;
+            else cr = Number(cr);
+
+            // JV-080: moved here because we want the OG number for orderCR but can't depend on .details.cr being present 
+            decoratedNpc.orderCR = cr;
+
+            if (cr > 0 && cr < 1) cr = "1/" + (1 / cr);
+            decoratedNpc.displayCR = cr;
+
+            decoratedNpc.displaySize = 'unset';
+            decoratedNpc.filterSize = 2;
+            if (npcData.details) {
+                decoratedNpc.displayType = this.getNPCType(npcData.details.type);
+            }
+            else
+            {
+                decoratedNpc.displayType = 'unknown';
+            }
+
+            if (CONFIG.DND5E.actorSizes[npcData.traits.size] !== undefined) {
+                decoratedNpc.displaySize = CONFIG.DND5E.actorSizes[npcData.traits.size];
+            }
+            switch (decoratedNpc.system.traits.size) {
+                case 'grg': decoratedNpc.filterSize = 5; break;
+                case 'huge': decoratedNpc.filterSize = 4; break;
+                case 'lg': decoratedNpc.filterSize = 3; break;
+                case 'sm': decoratedNpc.filterSize = 1; break;
+                case 'tiny': decoratedNpc.filterSize = 0; break;
+                case 'med':
+                default: decoratedNpc.filterSize = 2; break;
+            }
+
+            // getting value for HasSpells and damage types
+            decoratedNpc.hasSpells = decoratedNpc.items?.type?.reduce((hasSpells, itemType) => hasSpells || itemType === 'spell', false);
+            decoratedNpc.damageDealt = decoratedNpc.items?.system?.damage?.parts ? decoratedNpc.items?.system?.damage?.parts?.filter(p => p?.length >= 2).map(p => p[1]) : [];
+            
+            // JV-080: Think we have covered this off above now. We're making no assumptions and assuring that all decoratedNpc fields are now not 'undef' 
+            //handle poorly constructed npc
+            //if (npcData.details?.type && !(npcData.details?.type instanceof Object)){
+            //    npcData.details.type = {value: npcData.details?.type};
+            //}
+
+            return decoratedNpc;
         }
-        switch (decoratedNpc.data.traits.size) {
-            case 'grg': decoratedNpc.filterSize = 5; break;
-            case 'huge': decoratedNpc.filterSize = 4; break;
-            case 'lg': decoratedNpc.filterSize = 3; break;
-            case 'sm': decoratedNpc.filterSize = 1; break;
-            case 'tiny': decoratedNpc.filterSize = 0; break;
-            case 'med':
-            default: decoratedNpc.filterSize = 2; break;
+        catch(e){
+            console.log('%c Error loading NPC:'+npc.name, 'background: white; color: red')
+            throw e;   
         }
-
-        // getting value for HasSpells and damage types
-        decoratedNpc.hasSpells = decoratedNpc.items?.type?.reduce((hasSpells, itemType) => hasSpells || itemType === 'spell', false);
-        decoratedNpc.damageDealt = decoratedNpc.items?.data?.damage?.parts ? decoratedNpc.items?.data?.damage?.parts?.filter(p => p?.length >= 2).map(p => p[1]) : [];
-
-        //handle poorly constructed npc
-        if (decoratedNpc.data?.details?.type && !(decoratedNpc.data?.details?.type instanceof Object)){
-            decoratedNpc.data.details.type = {value: decoratedNpc.data?.details?.type};
-        }
-
-        return decoratedNpc;
     }
 
     getNPCType(type){
