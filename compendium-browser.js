@@ -107,13 +107,7 @@ class CompendiumBrowser extends Application {
             "modules/compendium-browser/template/loading.html"
         ]);
 
-        // We need to know this because in v10(+) Item5e#data and Actor#data have changed to Item5e#system and Actor#system
-        this.isVersion10 = false;
 
-        if (game.release.generation >= 10 ) {
-            this.isVersion10 = true;
-        }
-        
         this.hookCompendiumList();
         
         //Reset the filters used in the dialog
@@ -664,7 +658,7 @@ class CompendiumBrowser extends Application {
           'items.system.damage.parts',
         ];
 
-        if (this.isVersion10)
+        if (CompendiumBrowser.isFoundryV10Plus)
         {
             requiredIndexFields = [
                 'name',
@@ -690,7 +684,7 @@ class CompendiumBrowser extends Application {
                             if (this.CurrentSeachNumber != seachNumber) {throw STOP_SEARCH;}
 
                             // JV-080: We're in a v10 foundry but the data doesn't have Actor#system - this means index fields won't have populated. Can't 'browse' like this. 
-                            if (this.isVersion10 && npc5e.system == undefined) {collectionName = pack.collection; throw NOT_MIGRATED;}
+                            if (CompendiumBrowser.isFoundryV10Plus && npc5e.system == undefined) {collectionName = pack.collection; throw NOT_MIGRATED;}
 
                             numNpcsLoaded = Object.keys(npcs).length;
 
@@ -1019,19 +1013,27 @@ class CompendiumBrowser extends Application {
         //JV-080 - v10 does away with item.data and everything is under #system but we want to decorate the first level of the item for return
         let item = item5e;
 
-        if (this.isVersion10) {
+        //JV-080: Folding these down to base item.x level so we can have v10 Item#system coexist with v9- Item
+        if (CompendiumBrowser.isFoundryV10Plus) {
             item.level = item5e.system?.level;
             item.components = item5e.system?.components;
+            item.damage = item5e.system?.damage;
+            item.classes = item5e.system?.classes;
+            item.requirements = item5e.system?.requirements;
         }
         else {
             item = item5e.data;
             item.level = item5e.data?.level;
             item.components = item5e.data?.level;
+            item.damage = item.data?.damage;       // equivalent to: item5e.data.data.xxx - Ugh. The 'fold down' in v10 makes sense now. 
+            item.classes = item.data?.classes;
+            item.requirements = item.data?.requirements;
         }
         // getting damage types (common to all Items, although some won't have any)
         item.damageTypes = [];
-        if (item.system.damage && item.system.damage.parts.length > 0) {
-            for (let part of item.system.damage.parts) {
+
+        if (item.damage && item.damage.parts.length > 0) {
+            for (let part of item.damage.parts) {
                 let type = part[1];
                 if (item.damageTypes.indexOf(type) === -1) {
                     item.damageTypes.push(type);
@@ -1045,13 +1047,13 @@ class CompendiumBrowser extends Application {
             //let cleanSpellName = spell.name.toLowerCase().replace(/[^a-zA-Z0-9\s:]/g, '').replace("'", '').replace(/ /g, '');
             if (this.classList[cleanSpellName]) {
                 let classes = this.classList[cleanSpellName];
-                item.system.classes = classes.split(',');
+                item.classes = classes.split(',');
             } else {
                 //FIXME: unfoundSpells += cleanSpellName + ',';
             }
         } else  if (item.type === 'feat' || item.type === 'class') {
             // getting class
-            let reqString = item.system.requirements?.replace(/[0-9]/g, '').trim();
+            let reqString = item.requirements?.replace(/[0-9]/g, '').trim();
             let matchedClass = [];
             for (let c in this.subClasses) {
                 if (reqString && reqString.toLowerCase().indexOf(c) !== -1) {
@@ -1070,8 +1072,9 @@ class CompendiumBrowser extends Application {
 
             // getting uses/ressources status
             item.usesRessources = item5e.hasLimitedUses;
+
             //JV-080: In v10 this is only a getter (and will already exist since item = item5e.system)
-            if (!this.isVersion10) {
+            if (!CompendiumBrowser.isFoundryV10Plus) {
                 item.hasSave = item5e.hasSave;
             }
         } else {
@@ -1101,7 +1104,7 @@ class CompendiumBrowser extends Application {
             //0.8.0: update for V10 to use actor.system instead of actor.data
             let npcData = decoratedNpc.data; 
 
-            if (this.isVersion10)
+            if (CompendiumBrowser.isFoundryV10Plus)
             {
                     npcData = decoratedNpc.system;
             }
@@ -1130,7 +1133,13 @@ class CompendiumBrowser extends Application {
             if (CONFIG.DND5E.actorSizes[npcData.traits.size] !== undefined) {
                 decoratedNpc.displaySize = CONFIG.DND5E.actorSizes[npcData.traits.size];
             }
-            switch (decoratedNpc.system.traits.size) {
+            let npcSize;
+            if (CompendiumBrowser.isFoundryV10Plus) {
+                npcSize = decoratedNpc.system.traits.size;
+            } else {
+                npcSize = decoratedNpc.data.traits.size;                
+            }
+            switch (npcSize) {
                 case 'grg': decoratedNpc.filterSize = 5; break;
                 case 'huge': decoratedNpc.filterSize = 4; break;
                 case 'lg': decoratedNpc.filterSize = 3; break;
@@ -1142,7 +1151,13 @@ class CompendiumBrowser extends Application {
 
             // getting value for HasSpells and damage types
             decoratedNpc.hasSpells = decoratedNpc.items?.type?.reduce((hasSpells, itemType) => hasSpells || itemType === 'spell', false);
-            decoratedNpc.damageDealt = decoratedNpc.items?.system?.damage?.parts ? decoratedNpc.items?.system?.damage?.parts?.filter(p => p?.length >= 2).map(p => p[1]) : [];
+            let npcDamagePart;
+            if (CompendiumBrowser.isFoundryV10Plus) {
+                npcDamagePart = decoratedNpc.items?.system?.damage?.parts;
+            } else {
+                npcDamagePart = decoratedNpc.items?.data?.damage?.parts;
+            }
+            decoratedNpc.damageDealt = npcDamagePart ? npcDamagePart.filter(p => p?.length >= 2).map(p => p[1]) : [];
             
             // JV-080: Think we have covered this off above now. We're making no assumptions and assuring that all decoratedNpc fields are now not 'undef' 
             //handle poorly constructed npc
@@ -1338,7 +1353,10 @@ class CompendiumBrowser extends Application {
 
         //0.9.5 Set the CompendiumBrowser.isFoundryV8Plus variable for different code-paths
         //If v9, then game.data.version will throw a deprecation warning so test for v9 first
-        CompendiumBrowser.isFoundryV8Plus = (game.data.release?.generation >= 9) || (game.data.version?.startsWith("0.8"));
+        CompendiumBrowser.isFoundryV8Plus = (game.release?.generation >= 10) || (game.data.release?.generation >= 9) || (game.data.version?.startsWith("0.8"));
+        
+        // If V10, we need to know this because in v10(+) Item5e#data and Actor#data have changed to Item5e#system and Actor#system
+        CompendiumBrowser.isFoundryV10Plus = (game.release?.generation >= 10);
     }
 
     saveSettings() {
@@ -1372,45 +1390,93 @@ class CompendiumBrowser extends Application {
 
     async addSpellFilters() {
         // Spellfilters
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.lvl"), 'data.level', 'multiSelect', [game.i18n.localize("CMPBrowser.cantip"), 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.school"), 'data.school', 'select', CONFIG.DND5E.spellSchools);
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.castingTime"), 'data.activation.type', 'select',
-            {
-                action: game.i18n.localize("DND5E.Action"),
-                bonus: game.i18n.localize("CMPBrowser.bonusAction"),
-                reaction: game.i18n.localize("CMPBrowser.reaction"),
-                minute: game.i18n.localize("DND5E.TimeMinute"),
-                hour: game.i18n.localize("DND5E.TimeHour"),
-                day: game.i18n.localize("DND5E.TimeDay")
-            }
-        );
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.spellType"), 'data.actionType', 'select', CONFIG.DND5E.itemActionTypes);
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.damageType"), 'damageTypes', 'select', CONFIG.DND5E.damageTypes);
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.class"), 'data.classes', 'select',
-            {
-                artificer: game.i18n.localize("CMPBrowser.artificer"),
-                bard: game.i18n.localize("CMPBrowser.bard"),
-                cleric: game.i18n.localize("CMPBrowser.cleric"),
-                druid: game.i18n.localize("CMPBrowser.druid"),
-                paladin: game.i18n.localize("CMPBrowser.paladin"),
-                ranger: game.i18n.localize("CMPBrowser.ranger"),
-                sorcerer: game.i18n.localize("CMPBrowser.sorcerer"),
-                warlock: game.i18n.localize("CMPBrowser.warlock"),
-                wizard: game.i18n.localize("CMPBrowser.wizard"),
-            }, true
-        );
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.ritual"), 'data.components.ritual', 'bool');
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.concentration"), 'data.components.concentration', 'bool');
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.verbal"), 'data.components.vocal', 'bool');
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.somatic"), 'data.components.somatic', 'bool');
-        this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.material"), 'data.components.material', 'bool');
+        //Foundry v10+ Item#data is now Item#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'system.source', 'text');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.lvl"), 'system.level', 'multiSelect', [game.i18n.localize("CMPBrowser.cantip"), 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.school"), 'system.school', 'select', CONFIG.DND5E.spellSchools);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.castingTime"), 'system.activation.type', 'select',
+                {
+                    action: game.i18n.localize("DND5E.Action"),
+                    bonus: game.i18n.localize("CMPBrowser.bonusAction"),
+                    reaction: game.i18n.localize("CMPBrowser.reaction"),
+                    minute: game.i18n.localize("DND5E.TimeMinute"),
+                    hour: game.i18n.localize("DND5E.TimeHour"),
+                    day: game.i18n.localize("DND5E.TimeDay")
+                }
+            );
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.spellType"), 'system.actionType', 'select', CONFIG.DND5E.itemActionTypes);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.damageType"), 'damageTypes', 'select', CONFIG.DND5E.damageTypes);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.class"), 'system.classes', 'select',
+                {
+                    artificer: game.i18n.localize("CMPBrowser.artificer"),
+                    bard: game.i18n.localize("CMPBrowser.bard"),
+                    cleric: game.i18n.localize("CMPBrowser.cleric"),
+                    druid: game.i18n.localize("CMPBrowser.druid"),
+                    paladin: game.i18n.localize("CMPBrowser.paladin"),
+                    ranger: game.i18n.localize("CMPBrowser.ranger"),
+                    sorcerer: game.i18n.localize("CMPBrowser.sorcerer"),
+                    warlock: game.i18n.localize("CMPBrowser.warlock"),
+                    wizard: game.i18n.localize("CMPBrowser.wizard"),
+                }, true
+            );
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.ritual"), 'system.components.ritual', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.concentration"), 'system.components.concentration', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.verbal"), 'system.components.vocal', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.somatic"), 'system.components.somatic', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.material"), 'system.components.material', 'bool');
+        }
+        else {
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.lvl"), 'data.level', 'multiSelect', [game.i18n.localize("CMPBrowser.cantip"), 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.school"), 'data.school', 'select', CONFIG.DND5E.spellSchools);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.castingTime"), 'data.activation.type', 'select',
+                {
+                    action: game.i18n.localize("DND5E.Action"),
+                    bonus: game.i18n.localize("CMPBrowser.bonusAction"),
+                    reaction: game.i18n.localize("CMPBrowser.reaction"),
+                    minute: game.i18n.localize("DND5E.TimeMinute"),
+                    hour: game.i18n.localize("DND5E.TimeHour"),
+                    day: game.i18n.localize("DND5E.TimeDay")
+                }
+            );
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.spellType"), 'data.actionType', 'select', CONFIG.DND5E.itemActionTypes);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.damageType"), 'damageTypes', 'select', CONFIG.DND5E.damageTypes);
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.class"), 'data.classes', 'select',
+                {
+                    artificer: game.i18n.localize("CMPBrowser.artificer"),
+                    bard: game.i18n.localize("CMPBrowser.bard"),
+                    cleric: game.i18n.localize("CMPBrowser.cleric"),
+                    druid: game.i18n.localize("CMPBrowser.druid"),
+                    paladin: game.i18n.localize("CMPBrowser.paladin"),
+                    ranger: game.i18n.localize("CMPBrowser.ranger"),
+                    sorcerer: game.i18n.localize("CMPBrowser.sorcerer"),
+                    warlock: game.i18n.localize("CMPBrowser.warlock"),
+                    wizard: game.i18n.localize("CMPBrowser.wizard"),
+                }, true
+            );
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.ritual"), 'data.components.ritual', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.concentration"), 'data.components.concentration', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.verbal"), 'data.components.vocal', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.somatic"), 'data.components.somatic', 'bool');
+            this.addSpellFilter(game.i18n.localize("CMPBrowser.components"), game.i18n.localize("CMPBrowser.material"), 'data.components.material', 'bool');            
+        }
     }
 
     async addItemFilters() {
         // Item Filters
 
-        this.addItemFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
+        // Feature Filters
+        //Foundry v10+ Item#data is now Item#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addItemFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'system.source', 'text');
+        }
+        else
+        {
+            this.addItemFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
+        }
+
         this.addItemFilter(game.i18n.localize("CMPBrowser.general"), "Item Type", 'type', 'select', {
             consumable: game.i18n.localize("DND5E.ItemTypeConsumable"),
             backpack: game.i18n.localize("DND5E.ItemTypeContainer"),
@@ -1431,13 +1497,27 @@ class CompendiumBrowser extends Application {
                 scholar: "Scholar's Pack",
             }, true
         );
-        this.addItemFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'data.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addItemFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'system.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);
+        }
+        else {
+            this.addItemFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'data.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);
+        }
+
         this.addItemFilter("Game Mechanics", game.i18n.localize("CMPBrowser.damageType"), 'damageTypes', 'select', CONFIG.DND5E.damageTypes);
         this.addItemFilter("Game Mechanics", "Uses Resources", 'usesRessources', 'bool');
+        
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addItemFilter("Item Subtype", "Weapon", 'system.weaponType', 'text', CONFIG.DND5E.weaponTypes);
+            this.addItemFilter("Item Subtype", "Equipment", 'system.armor.type', 'text', CONFIG.DND5E.equipmentTypes);
+            this.addItemFilter("Item Subtype", "Consumable", 'system.consumableType', 'text', CONFIG.DND5E.consumableTypes);
+        }
+        else {
+            this.addItemFilter("Item Subtype", "Weapon", 'data.weaponType', 'text', CONFIG.DND5E.weaponTypes);
+            this.addItemFilter("Item Subtype", "Equipment", 'data.armor.type', 'text', CONFIG.DND5E.equipmentTypes);
+            this.addItemFilter("Item Subtype", "Consumable", 'data.consumableType', 'text', CONFIG.DND5E.consumableTypes);            
+        }
 
-        this.addItemFilter("Item Subtype", "Weapon", 'data.weaponType', 'text', CONFIG.DND5E.weaponTypes);
-        this.addItemFilter("Item Subtype", "Equipment", 'data.armor.type', 'text', CONFIG.DND5E.equipmentTypes);
-        this.addItemFilter("Item Subtype", "Consumable", 'data.consumableType', 'text', CONFIG.DND5E.consumableTypes);
         
         //0.7.2c: Fix rarity encoding (uses camelcase names)
         this.addItemFilter("Magic Items", "Rarity", 'data.rarity', 'select', 
@@ -1453,8 +1533,14 @@ class CompendiumBrowser extends Application {
     async addFeatFilters() {
         
         // Feature Filters
-
-        this.addFeatFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
+        //Foundry v10+ Item#data is now Item#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addFeatFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'system.source', 'text');
+        }
+        else
+        {
+            this.addFeatFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.source', 'text');
+        }
         this.addFeatFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.class"), 'classRequirement', 'select',
             {
                 artificer: game.i18n.localize("CMPBrowser.artificer"),
@@ -1472,7 +1558,12 @@ class CompendiumBrowser extends Application {
                 wizard: game.i18n.localize("CMPBrowser.wizard")
             }, true);
 
-        this.addFeatFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'data.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addFeatFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'system.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);
+        }
+        else {
+            this.addFeatFilter("Game Mechanics", game.i18n.localize("DND5E.ItemActivationCost"), 'data.activation.type', 'select', CONFIG.DND5E.abilityActivationTypes);            
+        }
         this.addFeatFilter("Game Mechanics", game.i18n.localize("CMPBrowser.damageType"), 'damageTypes', 'select', CONFIG.DND5E.damageTypes);
         this.addFeatFilter("Game Mechanics", "Uses Resources", 'usesRessources', 'bool');
 
@@ -1482,18 +1573,33 @@ class CompendiumBrowser extends Application {
     async addNpcFilters() {
         // NPC Filters
 
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.details.source', 'text');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.size"), 'data.traits.size', 'select', CONFIG.DND5E.actorSizes);
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasSpells"), 'hasSpells', 'bool');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegAct"), 'data.resources.legact.max', 'bool');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegRes"), 'data.resources.legres.max', 'bool');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.cr"), 'data.details.cr', 'numberCompare');
-
-        //Foundry 0.8.x: Creature type (data.details.type) is now a structure, so we check data.details.types.value instead
+        //Foundry v10+ Actor#data is now Actor#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'system.details.source', 'text');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.size"), 'system.traits.size', 'select', CONFIG.DND5E.actorSizes);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasSpells"), 'hasSpells', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegAct"), 'system.resources.legact.max', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegRes"), 'system.resources.legres.max', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.cr"), 'system.details.cr', 'numberCompare');
+        }
+        else {
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("DND5E.Source"), 'data.details.source', 'text');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.size"), 'data.traits.size', 'select', CONFIG.DND5E.actorSizes);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasSpells"), 'hasSpells', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegAct"), 'data.resources.legact.max', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.hasLegRes"), 'data.resources.legres.max', 'bool');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.general"), game.i18n.localize("CMPBrowser.cr"), 'data.details.cr', 'numberCompare');
+        }
         let npcDetailsPath;
-        if (CompendiumBrowser.isFoundryV8Plus) {
+        //Foundry v10+ Actor#data is now Actor#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            npcDetailsPath = "system.details.type.value";
+        }
+        //Foundry 0.8.x: Creature type (data.details.type) is now a structure, so we check data.details.types.value instead
+        else if (CompendiumBrowser.isFoundryV8Plus) {
             npcDetailsPath = "data.details.type.value";
-        } else {//0.7.x
+        }
+        else {//0.7.x
             npcDetailsPath = "data.details.type";
         }
 
@@ -1513,20 +1619,37 @@ class CompendiumBrowser extends Application {
             plant: game.i18n.localize("CMPBrowser.plant"),
             undead: game.i18n.localize("CMPBrowser.undead")
         });
+        //Foundry v10+ Actor#data is now Actor#system
+        if (CompendiumBrowser.isFoundryV10Plus) {
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityStr"), 'system.abilities.str.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityDex"), 'system.abilities.dex.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCon"), 'system.abilities.con.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityInt"), 'system.abilities.int.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityWis"), 'system.abilities.wis.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCha"), 'system.abilities.cha.value', 'numberCompare');
 
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityStr"), 'data.abilities.str.value', 'numberCompare');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityDex"), 'data.abilities.dex.value', 'numberCompare');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCon"), 'data.abilities.con.value', 'numberCompare');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityInt"), 'data.abilities.int.value', 'numberCompare');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityWis"), 'data.abilities.wis.value', 'numberCompare');
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCha"), 'data.abilities.cha.value', 'numberCompare');
-
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamImm"), 'data.traits.di.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamRes"), 'data.traits.dr.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamVuln"), 'data.traits.dv.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.ConImm"), 'data.traits.ci.value', 'multiSelect', CONFIG.DND5E.conditionTypes, true);
-        this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("CMPBrowser.dmgDealt"), 'damageDealt', 'multiSelect', CONFIG.DND5E.damageTypes, true);
-
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamImm"), 'system.traits.di.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamRes"), 'system.traits.dr.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamVuln"), 'system.traits.dv.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.ConImm"), 'system.traits.ci.value', 'multiSelect', CONFIG.DND5E.conditionTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("CMPBrowser.dmgDealt"), 'damageDealt', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            }
+        else
+        {
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityStr"), 'data.abilities.str.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityDex"), 'data.abilities.dex.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCon"), 'data.abilities.con.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityInt"), 'data.abilities.int.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityWis"), 'data.abilities.wis.value', 'numberCompare');
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.abilities"), game.i18n.localize("DND5E.AbilityCha"), 'data.abilities.cha.value', 'numberCompare');
+    
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamImm"), 'data.traits.di.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamRes"), 'data.traits.dr.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.DamVuln"), 'data.traits.dv.value', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("DND5E.ConImm"), 'data.traits.ci.value', 'multiSelect', CONFIG.DND5E.conditionTypes, true);
+            this.addNpcFilter(game.i18n.localize("CMPBrowser.dmgInteraction"), game.i18n.localize("CMPBrowser.dmgDealt"), 'damageDealt', 'multiSelect', CONFIG.DND5E.damageTypes, true);
+     
+        }
     }
 
     /**
